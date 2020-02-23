@@ -1,215 +1,122 @@
-/*!
- * jQuery Form Plugin 2.83 (11-JUL-2011)
- * Dual licensed under the MIT and GPL licenses:
- *   http://www.opensource.org/licenses/mit-license.php
- *   http://www.gnu.org/licenses/gpl.html
- */
+ 
+/*  ==========================================================================
+	jQuery FormChimp - v1.2.2
+	A customizable MailChimp ajax plugin for jQuery
+	Fabio Quarantini - @febba
+	http://www.fabioquarantini.com/formchimp/
+	==========================================================================  */
 
-/**
- * ajaxSubmit() provides a mechanism for immediately submitting
- * an HTML form using AJAX.
- */
-$.fn.ajaxSubmit = function(options) {
-    // fast fail if nothing selected
-    if (!this.length) {
-        return this;
-    }
+
+    (function($, window, document, undefined) {
+        $.fn.formchimp = function(settings) {
+            var $form = $(this);
+            var $body = $('body');
+            var actionUrl = $form.attr('action').replace('/post?', '/post-json?').concat('&c=?');
+            var $button = $form.find('[type="submit"]');
+            var defaults = {
+                'appendElement': $form,					// Declare where the new element, containing the messages from Mailchimp will be appended to.
+                'buttonSelector': $button,				// Set the button selector.
+                'buttonText': '', 						// The message to be written on the submit button after a successful subscription.
+                'debug': false, 						// Activate debug message in console.
+                'errorMessage': '',						// Set custom error message given when return an error.
+                'onMailChimpSuccess': function() {},	// Callback that fires on success.
+                'onMailChimpError': function() {},		// Callback that fires on errors.
+                'responseClass': 'mc-response',			// Declare custom element in page for message output. (Set different classes for multiple sign-up forms)
+                'successMessage': '',					// Set a custom success message.
+                'url': actionUrl,						// The mailchip list subscription url, to get the JSONP address just change `post` to `post-json` and append `&c=?` at the end.
+            };
+            var originalButtonText = defaults.buttonSelector.text();
+            var $responseContainer;
     
-    var method, action, url, $form = this;
-
-    if (typeof options == 'function') {
-        options = {success: options};
-    }
-
-    method = this.attr('method');
-    action = this.attr('action');
-    url = (typeof action === 'string') ? $.trim(action) : '';
-    url = url || window.location.href || '';
-    if (url) {
-        // clean url (don't include hash vaue)
-        url = (url.match(/^([^#]+)/) || [])[1];
-    }
-
-    options = $.extend(true, {
-        url: url,
-        success: $.ajaxSettings.success,
-        type: method || 'GET',
-        iframeSrc: /^https/i.test(window.location.href || '') ? 'javascript:false' : 'about:blank'
-    }, options);
-
-    var n,v,a = this.formToArray(options.semantic);
-    if (options.data) {
-        options.extraData = options.data;
-        for (n in options.data) {
-            if(options.data[n] instanceof Array) {
-                for (var k in options.data[n]) {
-                    a.push( { name: n, value: options.data[n][k] } );
+            // Merge default whith settings
+            $.extend(defaults, settings);
+    
+            // On submit
+            $($form).on('submit', function(event) {
+                // Disable default action of submit
+                event.preventDefault();
+    
+                // Remove status class and add the loading
+                $body.removeClass('mc-success mc-error').addClass('mc-loading');
+    
+                // If the response container does not exists
+                if ($('.' + defaults.responseClass).length === 0) {
+                    // Add response container to append element
+                    $responseContainer = $('<div/>').addClass(defaults.responseClass).appendTo(defaults.appendElement);
+                } else {
+                    // Remove old message
+                    $responseContainer.html('');
                 }
-            }
-            else {
-                v = options.data[n];
-                v = $.isFunction(v) ? v() : v; // if value is fn, invoke it
-                a.push( { name: n, value: v } );
-            }
-        }
-    }
-
-    var q = $.param(a);
-
-    if (options.type.toUpperCase() == 'GET') {
-        options.url += (options.url.indexOf('?') >= 0 ? '&' : '?') + q;
-        options.data = null;  // data is null for 'get'
-    }
-    else {
-        options.data = q; // data is the query string for 'post'
-    }
-
-    var callbacks = [];
-
-    // perform a load on the target only if dataType is not provided
-    if (!options.dataType && options.target) {
-        var oldSuccess = options.success || function(){};
-        callbacks.push(function(data) {
-            var fn = options.replaceTarget ? 'replaceWith' : 'html';
-            $(options.target)[fn](data).each(oldSuccess, arguments);
-        });
-    }
-    else if (options.success) {
-        callbacks.push(options.success);
-    }
-
-    options.success = function(data, status, xhr) { // jQuery 1.4+ passes xhr as 3rd arg
-        var context = options.context || options;   // jQuery 1.4+ supports scope context 
-        for (var i=0, max=callbacks.length; i < max; i++) {
-            callbacks[i].apply(context, [data, status, xhr || $form, $form]);
-        }
-    };
-
-    if ($.browser.msie && method == 'get') { 
-        var ieMeth = $form[0].getAttribute('method');
-        if (typeof ieMeth === 'string')
-            options.type = ieMeth;
-    }
-    $.ajax(options);
-
-    // fire 'notify' event
-    this.trigger('form-submit-notify', [this, options]);
-    return this;
-};
-
-/**
- * ajaxForm() provides a mechanism for fully automating form submission.
- */
-$.fn.ajaxForm = function(options) {
-    if (this.length === 0) {
-        if (!$.isReady && this.selector) {
-            $(function() { //DOM not ready, queue
-                $(this.selector, this.context).ajaxForm(options);
+    
+                // Perform an Ajax request
+                $.ajax({
+    
+                    url: defaults.url,
+                    data: $(this).serialize(),
+                    dataType: 'jsonp'
+    
+                }).done(function(data) {
+                    // If debug is active
+                    if (defaults.debug) {
+                        // Log in cosole the Mailchimp data
+                        console.log(JSON.stringify(data));
+                    }
+    
+                    // Save the Mailchimp data
+                    var responseMessage = data.msg;
+    
+                    // If the message start with a number and contains "-"
+                    if(!isNaN(responseMessage.charAt(0)) && responseMessage.charAt(2) === '-') {
+                        // Remove first 3 characters
+                        responseMessage = responseMessage.substring(3);
+                    }
+    
+                    // Add status class and remove the loading class
+                    $body.addClass('mc-' + data.result).removeClass('mc-loading');
+    
+                    // If the Mailchimp result is success
+                    if (data.result === 'success') {
+                        // If success message parameter is not empty
+                        if (defaults.successMessage !== '') {
+                            // Replace the default success message with parameter
+                            responseMessage = defaults.successMessage;
+                        }
+    
+                        // If button text parameter is not empty
+                        if (defaults.buttonText !== '') {
+                            // Replace the default button text with parameter
+                            defaults.buttonSelector.text(defaults.buttonText);
+                        }
+    
+                        // Add event on error
+                        $(document).trigger('mailChimpSuccess');
+    
+                        // Run callback
+                        defaults.onMailChimpSuccess.call();
+                    } else { // If there is an error
+                        // If error message parameter is not empty
+                        if (defaults.errorMessage !== '') {
+                            // Replace the default error message with parameter
+                            responseMessage = defaults.errorMessage;
+                        }
+    
+                        // If button text parameter is not empty
+                        if (defaults.buttonText !== '') {
+                            // Replace the default button text with the original text
+                            defaults.buttonSelector.text(originalButtonText);
+                        }
+    
+                        // Add event on error
+                        $(document).trigger('mailChimpError');
+    
+                        // Run callback
+                        defaults.onMailChimpError.call();
+                    }
+    
+                    // Show the message
+                    $responseContainer.html(responseMessage);
+                });
             });
-        }
-        return this;
-    }
-
-    return this.unbind('submit.form-plugin click.form-plugin')
-        .bind('submit.form-plugin', function(e) {
-        if (!e.isDefaultPrevented()) { // if event has been cancelled, don't proceed
-            e.preventDefault();
-            $(this).ajaxSubmit(options);
-        }
-    }).bind('click.form-plugin', function(e) {
-        var target = e.target;
-        var $el = $(target);
-        if (!($el.is(":submit"))) {
-            // is this a child element of the submit el?  (ex: a span within a button)
-            var t = $el.closest(':submit');
-            if (t.length == 0) {
-                return;
-            }
-            target = t[0];
-        }
-    });
-};
-
-/**
- * formToArray() gathers form element data into an array of objects that can
- * be passed to any of the following ajax functions: $.get, $.post, or load.
- * Each object in the array has both a 'name' and 'value' property.  An example of
- * an array for a simple login form might be:
- *
- * [ { name: 'username', value: 'jresig' }, { name: 'password', value: 'secret' } ]
- *
- * It is this array that is passed to pre-submit callback functions provided to the
- * ajaxSubmit() and ajaxForm() methods.
- */
-$.fn.formToArray = function(semantic) {
-    var a = [];
-    if (this.length === 0) {
-        return a;
-    }
-
-    var form = this[0];
-    var els = semantic ? form.getElementsByTagName('*') : form.elements;
-    if (!els) {
-        return a;
-    }
-
-    var i, j, n, v, el, max, jmax;
-    for (i = 0, max = els.length; i < max; i++) {
-        el = els[i];
-        n = el.name;
-        if (!n) {
-            continue;
-        }
-
-        v = $.fieldValue(el);
-        if (v && v.constructor == Array) {
-            for(j=0, jmax=v.length; j < jmax; j++) {
-                a.push({name: n, value: v[j]});
-            }
-        }
-        else if (v !== null && typeof v != 'undefined') {
-            a.push({name: n, value: v});
-        }
-    }
-    return a;
-};
-
-/**
- * Returns the value of the field element.
- */
-$.fieldValue = function(el) {
-    var n = el.name, t = el.type, tag = el.tagName.toLowerCase();
-    var successful = true;
-
-    if (successful && (!n || el.disabled || t == 'reset' || t == 'button' ||
-        (t == 'checkbox' || t == 'radio') && !el.checked ||
-        (t == 'submit' || t == 'image') && el.form && el.form.clk != el ||
-        tag == 'select' && el.selectedIndex == -1)) {
-            return null;
-    }
-
-    if (tag == 'select') {
-        var index = el.selectedIndex;
-        if (index < 0) {
-            return null;
-        }
-        var a = [], ops = el.options;
-        var one = (t == 'select-one');
-        var max = (one ? index+1 : ops.length);
-        for (var i= (one ? index : 0); i < max; i++) {
-            var op = ops[i];
-            if (op.selected) {
-                var v = op.value;
-                if (!v) { // extra pain for IE...
-                    v = (op.attributes && op.attributes['value'] && !(op.attributes['value'].specified)) ? op.text : op.value;
-                }
-                if (one) {
-                    return v;
-                }
-                a.push(v);
-            }
-        }
-        return a;
-    }
-    return $(el).val();
-}
+        };
+    })(jQuery, window, document);
+    
